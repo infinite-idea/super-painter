@@ -16,6 +16,7 @@
         <input
           id="split"
           type="checkbox"
+          :disabled="!split"
           v-model="kerning"
           @change="kerningChange"
         />
@@ -35,7 +36,39 @@ const FONTSIZE = 72;
 const svgRef = ref();
 const logoName = ref("");
 const split = ref(false);
-const kerning = ref(false);
+const kerning = ref(true);
+
+const searchZ = (path) => {
+  const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+  const arr = [
+    {
+      commands: [],
+    },
+  ];
+
+  for (let i = 0; i < path.commands.length; i++) {
+    const item = path.commands[i];
+
+    arr[arr.length - 1].commands.push(item);
+
+    if (item.type === "Z" && i < path.commands.length - 1) {
+      arr.push({
+        commands: [],
+      });
+    }
+  }
+
+  arr.forEach((item) => {
+    const path = new opentype.Path();
+    path.commands = item.commands;
+    const svgPathString = path.toSVG(1);
+    // 一直往父级的最后位置插入子节点
+    g.insertAdjacentHTML("beforeend", svgPathString);
+  });
+
+  return g;
+};
 
 const drawPath2Svg = (font, chars, starts) => {
   console.time("draw");
@@ -46,19 +79,19 @@ const drawPath2Svg = (font, chars, starts) => {
   outerGroup.setAttribute("transform", "translate(0 100)");
 
   for (let i = 0; i < chars.length; i++) {
-    const path = font.getPath(chars[i], 0, 0, FONTSIZE, {
-      kerning: false,
-    });
-    const svgPathString = path.toSVG(1); // 参数1表示缩放因子
-    // 将SVG路径添加到SVG元素中
-    const pathDom = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "path"
-    );
-    const d = svgPathString.match(/d="(.*?)"/)[1];
-    pathDom.setAttribute("d", d);
-    pathDom.setAttribute("transform", `translate(${starts[i]} 0)`);
-    outerGroup.appendChild(pathDom);
+    const path = font.getPath(chars[i], 0, 0, FONTSIZE);
+    let innerDom;
+    if (split.value) {
+      innerDom = searchZ(path);
+    } else {
+      const svgPathString = path.toSVG(1); // 参数1表示缩放因子
+      // 将SVG路径添加到SVG元素中
+      innerDom = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const d = svgPathString.match(/d="(.*?)"/)[1];
+      innerDom.setAttribute("d", d);
+    }
+    innerDom.setAttribute("transform", `translate(${starts[i]} 0)`);
+    outerGroup.appendChild(innerDom);
   }
 
   svgRef.value.innerHTML = "";
@@ -83,7 +116,7 @@ const getKernings = (font, chars) => {
 };
 
 const text2Path = (str) => {
-  opentype.load("/src/assets/FiraSansMedium.woff", function (err, font) {
+  opentype.load("/src/assets/MiSans-Bold.woff", function (err, font) {
     if (err) {
       console.error("字体加载失败: ", err);
     } else {
@@ -98,7 +131,6 @@ const text2Path = (str) => {
         const charWidth =
           (font.charToGlyph(chars[i]).advanceWidth * FONTSIZE) /
           font.unitsPerEm;
-        console.log(charWidth);
         if (kernings[i]) {
           start += charWidth + (kernings[i] * FONTSIZE) / font.unitsPerEm;
         } else {
